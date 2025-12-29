@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多采多姿立體幾何空間</title>
+    <title>螢幕邊緣對齊繽紛空間</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
@@ -43,7 +43,7 @@
 </head>
 <body>
 
-    <div id="loading">正在建構繽紛色彩空間...</div>
+    <div id="loading">正在校準螢幕邊緣空間...</div>
 
     <div id="video-container">
         <video id="webcam" autoplay playsinline></video>
@@ -58,11 +58,11 @@
         let faceMesh;
 
         // 空間參數
-        const boxDepth = 250; 
-        const camZ = 45; 
-        const targetCount = 14; // 稍微增加數量讓色彩更豐富
+        const boxDepth = 300; // 稍微增加深度感
+        const camZ = 50; // 假設人臉距離螢幕的基礎距離
+        const targetCount = 14; 
 
-        // 顏色清單：黃色、藍色、青色、紫色、洋紅色
+        // 顏色清單
         const colorPalette = [0xFFFF00, 0x0077FF, 0x00FFFF, 0x9900FF, 0xFF00FF];
 
         async function init() {
@@ -121,6 +121,7 @@
                 ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
             }
 
+            // 白色邊界亮線，用於標示螢幕邊緣
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 12;
             ctx.shadowColor = '#00aaff';
@@ -133,15 +134,11 @@
             return tex;
         }
 
-        // 建立彩色立體正方形
         function createCubeTarget() {
-            const size = 4.5;
+            const size = 5;
             const geo = new THREE.BoxGeometry(size, size, size);
-            
-            // 隨機選取兩個顏色做搭配
             const c1 = colorPalette[Math.floor(Math.random() * colorPalette.length)];
             const c2 = colorPalette[Math.floor(Math.random() * colorPalette.length)];
-
             const mats = [
                 new THREE.MeshBasicMaterial({ color: c1 }),
                 new THREE.MeshBasicMaterial({ color: c2 }),
@@ -153,9 +150,8 @@
             return new THREE.Mesh(geo, mats);
         }
 
-        // 建立彩色立體圓球
         function createSphereTarget() {
-            const geo = new THREE.SphereGeometry(3.5, 32, 32);
+            const geo = new THREE.SphereGeometry(3.8, 32, 32);
             const randomColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
             const mat = new THREE.MeshStandardMaterial({ 
                 color: randomColor, 
@@ -169,7 +165,7 @@
 
         function initThree() {
             scene = new THREE.Scene();
-            scene.fog = new THREE.Fog(0x000000, 100, boxDepth + 50);
+            scene.fog = new THREE.Fog(0x000000, 150, boxDepth + 50);
 
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
             camera.position.set(0, 0, camZ);
@@ -187,21 +183,19 @@
                 
                 const baseX = (Math.random() - 0.5) * 60;
                 const baseY = (Math.random() - 0.5) * 50;
-                const baseZ = -(Math.random() * 160 + 10); 
+                const baseZ = -(Math.random() * 200 + 20); 
                 targetObj.position.set(baseX, baseY, baseZ);
                 scene.add(targetObj);
 
-                // 導引線顏色也隨機化，並加強發光感
                 const lineColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
                 const lineLen = boxDepth + baseZ;
-                const lineGeo = new THREE.CylinderGeometry(0.25, 0.25, lineLen, 8);
+                const lineGeo = new THREE.CylinderGeometry(0.3, 0.3, lineLen, 8);
                 const lineMat = new THREE.MeshBasicMaterial({ 
                     color: lineColor, 
                     transparent: true, 
-                    opacity: 0.35 
+                    opacity: 0.3 
                 });
                 const line = new THREE.Mesh(lineGeo, lineMat);
-                
                 line.rotation.x = Math.PI / 2;
                 line.position.set(baseX, baseY, (baseZ - boxDepth) / 2);
                 scene.add(line);
@@ -210,13 +204,13 @@
                     mesh: targetObj,
                     line: line,
                     basePos: new THREE.Vector3(baseX, baseY, baseZ),
-                    offsetFactor: 0.03 + Math.random() * 0.07,
-                    rotSpeedX: (Math.random() - 0.5) * 0.03,
-                    rotSpeedY: (Math.random() - 0.5) * 0.03
+                    offsetFactor: 0.02 + Math.random() * 0.05,
+                    rotSpeedX: (Math.random() - 0.5) * 0.02,
+                    rotSpeedY: (Math.random() - 0.5) * 0.02
                 });
             }
 
-            headLight = new THREE.PointLight(0xffffff, 1.5, 500);
+            headLight = new THREE.PointLight(0xffffff, 1.5, 600);
             scene.add(headLight);
             scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
@@ -225,11 +219,14 @@
 
         function updateRoom() {
             if (room) scene.remove(room);
+            
+            // 關鍵優化：將畫面的寬高定義為場景的前端開口大小
             const aspect = window.innerWidth / window.innerHeight;
-            const h = 70; 
-            const w = h * aspect;
+            const h = 70; // 垂直基準高度
+            const w = h * aspect; // 根據螢幕比例計算寬度
+
             const gridTex = createRectangleGridTexture();
-            const depthRepeat = 12;
+            const depthRepeat = 15;
 
             const materials = [
                 new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Right
@@ -245,36 +242,46 @@
             materials[2].map.repeat.set(1, depthRepeat);
             materials[3].map.repeat.set(1, depthRepeat);
 
+            // 房間的 BoxGeometry 寬高直接與螢幕比例掛鉤
             const roomGeo = new THREE.BoxGeometry(w, h, boxDepth);
             room = new THREE.Mesh(roomGeo, materials);
+            
+            // 將房間向後移動，使其「前端」剛好處於相機投影的 Near 平面附近
             room.position.z = -boxDepth / 2; 
             scene.add(room);
+            
+            // 存儲物理寬高供相機矩陣使用
+            room.userData.w = w;
+            room.userData.h = h;
         }
 
         function onResults(results) {
             if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
 
             const nose = results.multiFaceLandmarks[0][1];
-            const targetX = (nose.x - 0.5) * -140; 
-            const targetY = (nose.y - 0.5) * -130;
+            // 映射人臉座標到空間中的位置
+            const targetX = (nose.x - 0.5) * -150; 
+            const targetY = (nose.y - 0.5) * -120;
 
             camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, 0.1);
             camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetY, 0.1);
             
-            const aspect = window.innerWidth / window.innerHeight;
+            // Off-axis Projection (物理對齊核心邏輯)
             const near = camera.near;
             const focus = camera.position.z; 
-            const fovRad = THREE.MathUtils.degToRad(camera.fov);
-            const halfHeight = Math.tan(fovRad * 0.5) * focus;
-            const halfWidth = halfHeight * aspect;
+            const hw = room.userData.w / 2;
+            const hh = room.userData.h / 2;
+            
+            // 計算相機相對於螢幕中心點的偏移
             const dx = -camera.position.x;
             const dy = -camera.position.y;
 
+            // 重新定義投影矩陣，讓視錐體的開口完美對準螢幕邊緣
             camera.projectionMatrix.makePerspective(
-                ( -halfWidth + dx ) * near / focus,
-                (  halfWidth + dx ) * near / focus,
-                (  halfHeight + dy ) * near / focus,
-                ( -halfHeight + dy ) * near / focus,
+                ( -hw + dx ) * near / focus,
+                (  hw + dx ) * near / focus,
+                (  hh + dy ) * near / focus,
+                ( -hh + dy ) * near / focus,
                 near,
                 camera.far
             );
@@ -284,7 +291,6 @@
                 const driftY = camera.position.y * t.offsetFactor;
                 t.mesh.position.x = t.basePos.x + driftX;
                 t.mesh.position.y = t.basePos.y + driftY;
-                
                 t.line.position.x = t.mesh.position.x;
                 t.line.position.y = t.mesh.position.y;
             });
@@ -302,10 +308,9 @@
         }
 
         function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
             updateRoom();
+            // 相機的 Aspect 會在 onResults 的動態矩陣中被覆蓋，所以這裡主要更新渲染器
         }
 
         window.onload = init;
