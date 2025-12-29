@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多采多姿立體幾何空間</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; cursor: none; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #video-container {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 80px;
+            height: 60px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            z-index: 100;
+            opacity: 0.1;
+            pointer-events: none;
+        }
+        #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #loading {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+            color: #fff;
+            font-family: 'Segoe UI', sans-serif;
+            z-index: 200;
+            letter-spacing: 2px;
+            transition: opacity 1s;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">正在建構繽紛色彩空間...</div>
+
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline></video>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('webcam');
+        const loadingScreen = document.getElementById('loading');
+        
+        let scene, camera, renderer, headLight, room;
+        let targets = []; 
+        let faceMesh;
+
+        // 空間參數
+        const boxDepth = 250; 
+        const camZ = 45; 
+        const targetCount = 14; // 稍微增加數量讓色彩更豐富
+
+        // 顏色清單：黃色、藍色、青色、紫色、洋紅色
+        const colorPalette = [0xFFFF00, 0x0077FF, 0x00FFFF, 0x9900FF, 0xFF00FF];
+
+        async function init() {
+            initThree();
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                videoElement.srcObject = stream;
+
+                faceMesh = new FaceMesh({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+                });
+
+                faceMesh.setOptions({
+                    maxNumFaces: 1,
+                    refineLandmarks: true,
+                    minDetectionConfidence: 0.7
+                });
+
+                faceMesh.onResults(onResults);
+
+                videoElement.onloadedmetadata = () => {
+                    loadingScreen.style.opacity = '0';
+                    setTimeout(() => loadingScreen.remove(), 1000);
+                    
+                    const predict = async () => {
+                        await faceMesh.send({ image: videoElement });
+                        requestAnimationFrame(predict);
+                    };
+                    predict();
+                };
+
+                window.addEventListener('resize', onWindowResize);
+            } catch (e) {
+                loadingScreen.innerText = "無法開啟攝像頭，請檢查權限設定";
+            }
+        }
+
+        // 建立長方形網格紋理
+        function createRectangleGridTexture() {
+            const size = 1024;
+            const canvas = document.createElement('canvas');
+            canvas.width = size; canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, size, size);
+            
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 2;
+            const divisions = 8;
+            const step = size / divisions;
+
+            for(let i=0; i<=size; i+=step) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
+            }
+
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 12;
+            ctx.shadowColor = '#00aaff';
+            ctx.shadowBlur = 20;
+            ctx.strokeRect(0, 0, size, size);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.anisotropy = 16;
+            return tex;
+        }
+
+        // 建立彩色立體正方形
+        function createCubeTarget() {
+            const size = 4.5;
+            const geo = new THREE.BoxGeometry(size, size, size);
+            
+            // 隨機選取兩個顏色做搭配
+            const c1 = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+            const c2 = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+
+            const mats = [
+                new THREE.MeshBasicMaterial({ color: c1 }),
+                new THREE.MeshBasicMaterial({ color: c2 }),
+                new THREE.MeshBasicMaterial({ color: c1 }),
+                new THREE.MeshBasicMaterial({ color: c2 }),
+                new THREE.MeshBasicMaterial({ color: c1 }),
+                new THREE.MeshBasicMaterial({ color: c2 })
+            ];
+            return new THREE.Mesh(geo, mats);
+        }
+
+        // 建立彩色立體圓球
+        function createSphereTarget() {
+            const geo = new THREE.SphereGeometry(3.5, 32, 32);
+            const randomColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: randomColor, 
+                emissive: randomColor,
+                emissiveIntensity: 0.2,
+                roughness: 0.2,
+                metalness: 0.8 
+            });
+            return new THREE.Mesh(geo, mat);
+        }
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x000000, 100, boxDepth + 50);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 0, camZ);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            updateRoom();
+
+            for(let i = 0; i < targetCount; i++) {
+                const isCube = Math.random() > 0.5;
+                const targetObj = isCube ? createCubeTarget() : createSphereTarget();
+                
+                const baseX = (Math.random() - 0.5) * 60;
+                const baseY = (Math.random() - 0.5) * 50;
+                const baseZ = -(Math.random() * 160 + 10); 
+                targetObj.position.set(baseX, baseY, baseZ);
+                scene.add(targetObj);
+
+                // 導引線顏色也隨機化，並加強發光感
+                const lineColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+                const lineLen = boxDepth + baseZ;
+                const lineGeo = new THREE.CylinderGeometry(0.25, 0.25, lineLen, 8);
+                const lineMat = new THREE.MeshBasicMaterial({ 
+                    color: lineColor, 
+                    transparent: true, 
+                    opacity: 0.35 
+                });
+                const line = new THREE.Mesh(lineGeo, lineMat);
+                
+                line.rotation.x = Math.PI / 2;
+                line.position.set(baseX, baseY, (baseZ - boxDepth) / 2);
+                scene.add(line);
+
+                targets.push({
+                    mesh: targetObj,
+                    line: line,
+                    basePos: new THREE.Vector3(baseX, baseY, baseZ),
+                    offsetFactor: 0.03 + Math.random() * 0.07,
+                    rotSpeedX: (Math.random() - 0.5) * 0.03,
+                    rotSpeedY: (Math.random() - 0.5) * 0.03
+                });
+            }
+
+            headLight = new THREE.PointLight(0xffffff, 1.5, 500);
+            scene.add(headLight);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+            animate();
+        }
+
+        function updateRoom() {
+            if (room) scene.remove(room);
+            const aspect = window.innerWidth / window.innerHeight;
+            const h = 70; 
+            const w = h * aspect;
+            const gridTex = createRectangleGridTexture();
+            const depthRepeat = 12;
+
+            const materials = [
+                new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Right
+                new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Left
+                new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Top
+                new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Bottom
+                new THREE.MeshStandardMaterial({ color: 0x000000, side: THREE.BackSide }),     // Back
+                new THREE.MeshStandardMaterial({ transparent: true, opacity: 0 })               // Front
+            ];
+
+            materials[0].map.repeat.set(depthRepeat, 1);
+            materials[1].map.repeat.set(depthRepeat, 1);
+            materials[2].map.repeat.set(1, depthRepeat);
+            materials[3].map.repeat.set(1, depthRepeat);
+
+            const roomGeo = new THREE.BoxGeometry(w, h, boxDepth);
+            room = new THREE.Mesh(roomGeo, materials);
+            room.position.z = -boxDepth / 2; 
+            scene.add(room);
+        }
+
+        function onResults(results) {
+            if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
+
+            const nose = results.multiFaceLandmarks[0][1];
+            const targetX = (nose.x - 0.5) * -140; 
+            const targetY = (nose.y - 0.5) * -130;
+
+            camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, 0.1);
+            camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetY, 0.1);
+            
+            const aspect = window.innerWidth / window.innerHeight;
+            const near = camera.near;
+            const focus = camera.position.z; 
+            const fovRad = THREE.MathUtils.degToRad(camera.fov);
+            const halfHeight = Math.tan(fovRad * 0.5) * focus;
+            const halfWidth = halfHeight * aspect;
+            const dx = -camera.position.x;
+            const dy = -camera.position.y;
+
+            camera.projectionMatrix.makePerspective(
+                ( -halfWidth + dx ) * near / focus,
+                (  halfWidth + dx ) * near / focus,
+                (  halfHeight + dy ) * near / focus,
+                ( -halfHeight + dy ) * near / focus,
+                near,
+                camera.far
+            );
+
+            targets.forEach(t => {
+                const driftX = camera.position.x * t.offsetFactor;
+                const driftY = camera.position.y * t.offsetFactor;
+                t.mesh.position.x = t.basePos.x + driftX;
+                t.mesh.position.y = t.basePos.y + driftY;
+                
+                t.line.position.x = t.mesh.position.x;
+                t.line.position.y = t.mesh.position.y;
+            });
+
+            headLight.position.copy(camera.position);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            targets.forEach(t => {
+                t.mesh.rotation.x += t.rotSpeedX;
+                t.mesh.rotation.y += t.rotSpeedY;
+            });
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            updateRoom();
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
