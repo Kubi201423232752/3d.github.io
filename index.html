@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>螢幕邊緣對齊繽紛空間</title>
+    <title>加粗導引線立體空間</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
@@ -33,7 +33,7 @@
             justify-content: center;
             align-items: center;
             background: #000;
-            color: #fff;
+            color: #888;
             font-family: 'Segoe UI', sans-serif;
             z-index: 200;
             letter-spacing: 2px;
@@ -43,7 +43,7 @@
 </head>
 <body>
 
-    <div id="loading">正在校準螢幕邊緣空間...</div>
+    <div id="loading">正在強化光束導引線...</div>
 
     <div id="video-container">
         <video id="webcam" autoplay playsinline></video>
@@ -58,12 +58,9 @@
         let faceMesh;
 
         // 空間參數
-        const boxDepth = 300; // 稍微增加深度感
-        const camZ = 50; // 假設人臉距離螢幕的基礎距離
-        const targetCount = 14; 
-
-        // 顏色清單
-        const colorPalette = [0xFFFF00, 0x0077FF, 0x00FFFF, 0x9900FF, 0xFF00FF];
+        const boxDepth = 300; 
+        const camZ = 50; 
+        const targetCount = 12; 
 
         async function init() {
             initThree();
@@ -101,19 +98,30 @@
             }
         }
 
-        // 建立長方形網格紋理
-        function createRectangleGridTexture() {
+        // 建立真實網格紋理
+        function createRealisticTexture() {
             const size = 1024;
             const canvas = document.createElement('canvas');
             canvas.width = size; canvas.height = size;
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = '#050505';
+            ctx.fillStyle = '#0f0f0f'; 
             ctx.fillRect(0, 0, size, size);
             
-            ctx.strokeStyle = '#222';
-            ctx.lineWidth = 2;
-            const divisions = 8;
+            const imageData = ctx.getImageData(0, 0, size, size);
+            const data = imageData.data;
+            for(let i = 0; i < data.length; i += 4) {
+                const noise = (Math.random() - 0.5) * 10;
+                data[i] = Math.max(0, Math.min(255, data[i] + noise));     
+                data[i+1] = Math.max(0, Math.min(255, data[i+1] + noise)); 
+                data[i+2] = Math.max(0, Math.min(255, data[i+2] + noise)); 
+            }
+            ctx.putImageData(imageData, 0, 0);
+            
+            ctx.strokeStyle = '#3a3a3a'; 
+            ctx.lineWidth = 4;
+            
+            const divisions = 4; 
             const step = size / divisions;
 
             for(let i=0; i<=size; i+=step) {
@@ -121,79 +129,111 @@
                 ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
             }
 
-            // 白色邊界亮線，用於標示螢幕邊緣
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 12;
-            ctx.shadowColor = '#00aaff';
-            ctx.shadowBlur = 20;
-            ctx.strokeRect(0, 0, size, size);
-
             const tex = new THREE.CanvasTexture(canvas);
             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
             tex.anisotropy = 16;
             return tex;
         }
 
-        function createCubeTarget() {
-            const size = 5;
-            const geo = new THREE.BoxGeometry(size, size, size);
-            const c1 = colorPalette[Math.floor(Math.random() * colorPalette.length)];
-            const c2 = colorPalette[Math.floor(Math.random() * colorPalette.length)];
-            const mats = [
-                new THREE.MeshBasicMaterial({ color: c1 }),
-                new THREE.MeshBasicMaterial({ color: c2 }),
-                new THREE.MeshBasicMaterial({ color: c1 }),
-                new THREE.MeshBasicMaterial({ color: c2 }),
-                new THREE.MeshBasicMaterial({ color: c1 }),
-                new THREE.MeshBasicMaterial({ color: c2 })
-            ];
-            return new THREE.Mesh(geo, mats);
-        }
+        // 建立厚實的鏢靶
+        function createThickTarget() {
+            const innerGroup = new THREE.Group();
+            
+            const colors = [0xaa0000, 0xffffff, 0xaa0000, 0xffffff, 0xaa0000]; 
+            const radii = [5, 3.8, 2.6, 1.4, 0.4]; 
 
-        function createSphereTarget() {
-            const geo = new THREE.SphereGeometry(3.8, 32, 32);
-            const randomColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
-            const mat = new THREE.MeshStandardMaterial({ 
-                color: randomColor, 
-                emissive: randomColor,
-                emissiveIntensity: 0.2,
-                roughness: 0.2,
-                metalness: 0.8 
+            radii.forEach((r, i) => {
+                // 保持 0.6 的實體厚度
+                const geo = new THREE.CylinderGeometry(r, r, 0.6, 64);
+                
+                const mat = new THREE.MeshStandardMaterial({ 
+                    color: colors[i],
+                    roughness: 0.7,
+                    metalness: 0.0,
+                });
+                const disk = new THREE.Mesh(geo, mat);
+                disk.rotation.x = Math.PI / 2;
+                
+                disk.position.z = i * 0.06; 
+                
+                disk.castShadow = true;
+                disk.receiveShadow = true;
+                
+                innerGroup.add(disk);
             });
-            return new THREE.Mesh(geo, mat);
+
+            return innerGroup;
         }
 
         function initThree() {
             scene = new THREE.Scene();
-            scene.fog = new THREE.Fog(0x000000, 150, boxDepth + 50);
+            scene.fog = new THREE.FogExp2(0x020202, 0.0035);
 
-            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1.0, 2000);
             camera.position.set(0, 0, camZ);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
+            
+            renderer.physicallyCorrectLights = true;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.6;
+            
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
             document.body.appendChild(renderer.domElement);
 
             updateRoom();
 
-            for(let i = 0; i < targetCount; i++) {
-                const isCube = Math.random() > 0.5;
-                const targetObj = isCube ? createCubeTarget() : createSphereTarget();
-                
-                const baseX = (Math.random() - 0.5) * 60;
-                const baseY = (Math.random() - 0.5) * 50;
-                const baseZ = -(Math.random() * 200 + 20); 
-                targetObj.position.set(baseX, baseY, baseZ);
-                scene.add(targetObj);
+            const existingPositions = []; 
+            const minDistance = 18;       
 
-                const lineColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+            for(let i = 0; i < targetCount; i++) {
+                const wrapperGroup = new THREE.Group();
+                const targetMesh = createThickTarget();
+                wrapperGroup.add(targetMesh);
+                
+                let baseX, baseY, baseZ;
+                let validPosition = false;
+                let attempts = 0;
+
+                while (!validPosition && attempts < 100) {
+                    baseX = (Math.random() - 0.5) * 70;
+                    baseY = (Math.random() - 0.5) * 60;
+                    baseZ = -(Math.random() * 120 + 5);
+                    
+                    validPosition = true;
+                    for (const pos of existingPositions) {
+                        const dx = baseX - pos.x;
+                        const dy = baseY - pos.y;
+                        const dz = baseZ - pos.z;
+                        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        
+                        if (dist < minDistance) {
+                            validPosition = false;
+                            break;
+                        }
+                    }
+                    attempts++;
+                }
+
+                existingPositions.push({ x: baseX, y: baseY, z: baseZ });
+                
+                wrapperGroup.position.set(baseX, baseY, baseZ);
+                scene.add(wrapperGroup);
+
+                // 導引線 - 加粗
+                const lineColor = 0x00cccc; 
                 const lineLen = boxDepth + baseZ;
-                const lineGeo = new THREE.CylinderGeometry(0.3, 0.3, lineLen, 8);
+                // 半徑從 0.2 改為 0.8，增加粗度
+                const lineGeo = new THREE.CylinderGeometry(0.8, 0.8, lineLen, 12);
                 const lineMat = new THREE.MeshBasicMaterial({ 
                     color: lineColor, 
                     transparent: true, 
-                    opacity: 0.3 
+                    opacity: 0.3 // 稍微增加一點不透明度，讓粗線更有存在感
                 });
                 const line = new THREE.Mesh(lineGeo, lineMat);
                 line.rotation.x = Math.PI / 2;
@@ -201,18 +241,29 @@
                 scene.add(line);
 
                 targets.push({
-                    mesh: targetObj,
+                    wrapper: wrapperGroup, 
+                    inner: targetMesh,     
                     line: line,
                     basePos: new THREE.Vector3(baseX, baseY, baseZ),
                     offsetFactor: 0.02 + Math.random() * 0.05,
-                    rotSpeedX: (Math.random() - 0.5) * 0.02,
-                    rotSpeedY: (Math.random() - 0.5) * 0.02
+                    rotSpeed: (Math.random() - 0.5) * 0.02
                 });
             }
 
-            headLight = new THREE.PointLight(0xffffff, 1.5, 600);
+            // 主燈光
+            headLight = new THREE.PointLight(0xffffff, 300, 1000); 
+            headLight.castShadow = true;
+            headLight.shadow.mapSize.width = 2048;
+            headLight.shadow.mapSize.height = 2048;
+            headLight.shadow.bias = -0.0001;
+            headLight.shadow.radius = 4; 
             scene.add(headLight);
-            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            
+            scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+            
+            const rimLight = new THREE.DirectionalLight(0x001144, 0.8);
+            rimLight.position.set(0, 0, -100);
+            scene.add(rimLight);
 
             animate();
         }
@@ -220,37 +271,52 @@
         function updateRoom() {
             if (room) scene.remove(room);
             
-            // 關鍵優化：將畫面的寬高定義為場景的前端開口大小
             const aspect = window.innerWidth / window.innerHeight;
-            const h = 70; // 垂直基準高度
-            const w = h * aspect; // 根據螢幕比例計算寬度
+            const h = 70; 
+            const w = h * aspect;
 
-            const gridTex = createRectangleGridTexture();
-            const depthRepeat = 15;
+            const baseGridTex = createRealisticTexture();
+            const gridSize = 30; 
+            
+            const repeatH = h / gridSize;
+            const repeatW = w / gridSize;
+            const repeatD = boxDepth / gridSize;
+
+            const texRight = baseGridTex.clone();
+            const texLeft = baseGridTex.clone();
+            const texTop = baseGridTex.clone();
+            const texBottom = baseGridTex.clone();
+            const texBack = baseGridTex.clone();
+
+            texRight.repeat.set(repeatD, repeatH);
+            texLeft.repeat.set(repeatD, repeatH);
+            texTop.repeat.set(repeatW, repeatD);
+            texBottom.repeat.set(repeatW, repeatD);
+            texBack.repeat.set(repeatW, repeatH);
+
+            const commonMatParams = { 
+                side: THREE.BackSide,
+                roughness: 0.9, 
+                metalness: 0.1
+            };
 
             const materials = [
-                new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Right
-                new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Left
-                new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Top
-                new THREE.MeshStandardMaterial({ map: gridTex.clone(), side: THREE.BackSide }), // Bottom
-                new THREE.MeshStandardMaterial({ color: 0x000000, side: THREE.BackSide }),     // Back
-                new THREE.MeshStandardMaterial({ transparent: true, opacity: 0 })               // Front
+                new THREE.MeshStandardMaterial({ ...commonMatParams, map: texRight }), 
+                new THREE.MeshStandardMaterial({ ...commonMatParams, map: texLeft }),  
+                new THREE.MeshStandardMaterial({ ...commonMatParams, map: texTop }),   
+                new THREE.MeshStandardMaterial({ ...commonMatParams, map: texBottom }),
+                new THREE.MeshStandardMaterial({ ...commonMatParams, map: texBack, color: 0x111111 }), 
+                new THREE.MeshStandardMaterial({ transparent: true, opacity: 0 })      
             ];
 
-            materials[0].map.repeat.set(depthRepeat, 1);
-            materials[1].map.repeat.set(depthRepeat, 1);
-            materials[2].map.repeat.set(1, depthRepeat);
-            materials[3].map.repeat.set(1, depthRepeat);
-
-            // 房間的 BoxGeometry 寬高直接與螢幕比例掛鉤
             const roomGeo = new THREE.BoxGeometry(w, h, boxDepth);
             room = new THREE.Mesh(roomGeo, materials);
-            
-            // 將房間向後移動，使其「前端」剛好處於相機投影的 Near 平面附近
             room.position.z = -boxDepth / 2; 
+            
+            room.receiveShadow = true;
+            
             scene.add(room);
             
-            // 存儲物理寬高供相機矩陣使用
             room.userData.w = w;
             room.userData.h = h;
         }
@@ -259,24 +325,19 @@
             if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
 
             const nose = results.multiFaceLandmarks[0][1];
-            // 映射人臉座標到空間中的位置
             const targetX = (nose.x - 0.5) * -150; 
             const targetY = (nose.y - 0.5) * -120;
 
-            camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, 0.1);
-            camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetY, 0.1);
+            camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, 0.25);
+            camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetY, 0.25);
             
-            // Off-axis Projection (物理對齊核心邏輯)
             const near = camera.near;
             const focus = camera.position.z; 
             const hw = room.userData.w / 2;
             const hh = room.userData.h / 2;
-            
-            // 計算相機相對於螢幕中心點的偏移
             const dx = -camera.position.x;
             const dy = -camera.position.y;
 
-            // 重新定義投影矩陣，讓視錐體的開口完美對準螢幕邊緣
             camera.projectionMatrix.makePerspective(
                 ( -hw + dx ) * near / focus,
                 (  hw + dx ) * near / focus,
@@ -289,10 +350,12 @@
             targets.forEach(t => {
                 const driftX = camera.position.x * t.offsetFactor;
                 const driftY = camera.position.y * t.offsetFactor;
-                t.mesh.position.x = t.basePos.x + driftX;
-                t.mesh.position.y = t.basePos.y + driftY;
-                t.line.position.x = t.mesh.position.x;
-                t.line.position.y = t.mesh.position.y;
+                
+                t.wrapper.position.x = t.basePos.x + driftX;
+                t.wrapper.position.y = t.basePos.y + driftY;
+                
+                t.line.position.x = t.wrapper.position.x;
+                t.line.position.y = t.wrapper.position.y;
             });
 
             headLight.position.copy(camera.position);
@@ -301,8 +364,7 @@
         function animate() {
             requestAnimationFrame(animate);
             targets.forEach(t => {
-                t.mesh.rotation.x += t.rotSpeedX;
-                t.mesh.rotation.y += t.rotSpeedY;
+                t.inner.rotation.z += t.rotSpeed;
             });
             renderer.render(scene, camera);
         }
@@ -310,7 +372,6 @@
         function onWindowResize() {
             renderer.setSize(window.innerWidth, window.innerHeight);
             updateRoom();
-            // 相機的 Aspect 會在 onResults 的動態矩陣中被覆蓋，所以這裡主要更新渲染器
         }
 
         window.onload = init;
